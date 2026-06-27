@@ -78,7 +78,8 @@ p {
   margin: 0;
 }
 
-.metrics div {
+.metrics div,
+.route-stats div {
   padding: 14px 0;
   border-bottom: 1px solid #e5ebf0;
 }
@@ -98,6 +99,61 @@ dd {
   overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 650;
+}
+
+.route-panel {
+  display: grid;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+label {
+  color: #687789;
+  font-size: 13px;
+}
+
+input {
+  width: 100%;
+  height: 40px;
+  padding: 8px 10px;
+  color: #17212b;
+  background: #f7f9fb;
+  border: 1px solid #cad4df;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 48px;
+  gap: 10px;
+}
+
+button {
+  height: 42px;
+  border: 0;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #0b5fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.route-stats {
+  display: grid;
+  gap: 0;
+  margin: 0;
 }
 
 .dot {

@@ -7,6 +7,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let marker = null;
+let routeLayer = L.layerGroup().addTo(map);
+let playbackMarker = null;
+let playbackTimer = null;
+let trackPoints = [];
 
 const elements = {
   status: document.querySelector('#status'),
@@ -15,6 +19,13 @@ const elements = {
   coordinates: document.querySelector('#coordinates'),
   speed: document.querySelector('#speed'),
   time: document.querySelector('#time'),
+  trackDate: document.querySelector('#trackDate'),
+  speedLimit: document.querySelector('#speedLimit'),
+  loadTrack: document.querySelector('#loadTrack'),
+  playTrack: document.querySelector('#playTrack'),
+  trackCount: document.querySelector('#trackCount'),
+  overspeedCount: document.querySelector('#overspeedCount'),
+  maxSpeed: document.querySelector('#maxSpeed'),
 };
 
 function formatTime(value) {
@@ -31,6 +42,16 @@ function updateStatus(isOnline) {
   elements.statusDot.classList.toggle('offline', !isOnline);
 }
 
+function todayForInput() {
+  const date = new Date();
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 10);
+}
+
+function formatSpeed(value) {
+  return Number.isFinite(value) ? `${Math.round(value)} км/ч` : '-';
+}
+
 async function loadLocation() {
   try {
     const response = await fetch('/api/location', { cache: 'no-store' });
@@ -41,7 +62,7 @@ async function loadLocation() {
 
     updateStatus(Boolean(location.online));
     elements.deviceId.textContent = location.deviceId || '-';
-    elements.speed.textContent = Number.isFinite(location.speed) ? `${location.speed} км/ч` : '-';
+    elements.speed.textContent = formatSpeed(location.speed);
     elements.time.textContent = formatTime(location.time);
 
     if (!hasCoordinates) {
@@ -65,5 +86,135 @@ async function loadLocation() {
   }
 }
 
+async function loadTrack() {
+  stopPlayback();
+  elements.loadTrack.disabled = true;
+
+  try {
+    const params = new URLSearchParams({
+      date: elements.trackDate.value || todayForInput(),
+      speedLimit: elements.speedLimit.value || '60',
+      tzOffset: String(new Date().getTimezoneOffset()),
+    });
+    const response = await fetch(`/api/track?${params}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const track = await response.json();
+    trackPoints = track.points.filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+
+    elements.trackCount.textContent = String(track.count);
+    elements.overspeedCount.textContent = String(track.overspeedCount);
+    elements.maxSpeed.textContent = formatSpeed(track.maxSpeed);
+    elements.playTrack.disabled = trackPoints.length < 2;
+
+    drawTrack(Number.parseFloat(elements.speedLimit.value || '60'));
+  } catch (error) {
+    console.error('Failed to load track', error);
+    elements.trackCount.textContent = '-';
+    elements.overspeedCount.textContent = '-';
+    elements.maxSpeed.textContent = '-';
+  } finally {
+    elements.loadTrack.disabled = false;
+  }
+}
+
+function drawTrack(speedLimit) {
+  routeLayer.clearLayers();
+
+  if (trackPoints.length === 0) {
+    return;
+  }
+
+  for (let index = 1; index < trackPoints.length; index += 1) {
+    const previous = trackPoints[index - 1];
+    const current = trackPoints[index];
+    const isOverspeed = Number.isFinite(current.speed) && current.speed > speedLimit;
+
+    L.polyline(
+      [
+        [previous.lat, previous.lon],
+        [current.lat, current.lon],
+      ],
+      {
+        color: isOverspeed ? '#d64545' : '#0b5fff',
+        weight: isOverspeed ? 6 : 4,
+        opacity: 0.9,
+      },
+    ).addTo(routeLayer);
+  }
+
+  const start = trackPoints[0];
+  const finish = trackPoints[trackPoints.length - 1];
+  L.circleMarker([start.lat, start.lon], {
+    radius: 6,
+    color: '#18a058',
+    fillColor: '#18a058',
+    fillOpacity: 1,
+  }).addTo(routeLayer);
+  L.circleMarker([finish.lat, finish.lon], {
+    radius: 6,
+    color: '#17212b',
+    fillColor: '#17212b',
+    fillOpacity: 1,
+  }).addTo(routeLayer);
+
+  map.fitBounds(L.latLngBounds(trackPoints.map((point) => [point.lat, point.lon])), {
+    padding: [36, 36],
+    maxZoom: 16,
+  });
+}
+
+function togglePlayback() {
+  if (playbackTimer) {
+    stopPlayback();
+    return;
+  }
+
+  if (trackPoints.length < 2) {
+    return;
+  }
+
+  let index = 0;
+  elements.playTrack.textContent = '■';
+
+  playbackTimer = window.setInterval(() => {
+    const point = trackPoints[index];
+
+    if (!playbackMarker) {
+      playbackMarker = L.circleMarker([point.lat, point.lon], {
+        radius: 8,
+        color: '#f2b705',
+        fillColor: '#f2b705',
+        fillOpacity: 1,
+      }).addTo(routeLayer);
+    } else {
+      playbackMarker.setLatLng([point.lat, point.lon]);
+    }
+
+    playbackMarker.bindTooltip(`${formatTime(point.time)} · ${formatSpeed(point.speed)}`, {
+      permanent: false,
+    });
+
+    index += 1;
+    if (index >= trackPoints.length) {
+      stopPlayback();
+    }
+  }, 650);
+}
+
+function stopPlayback() {
+  if (playbackTimer) {
+    window.clearInterval(playbackTimer);
+    playbackTimer = null;
+  }
+  elements.playTrack.textContent = '▶';
+}
+
+elements.trackDate.value = todayForInput();
+elements.loadTrack.addEventListener('click', loadTrack);
+elements.playTrack.addEventListener('click', togglePlayback);
+elements.speedLimit.addEventListener('change', loadTrack);
+
 loadLocation();
+loadTrack();
 window.setInterval(loadLocation, 3000);

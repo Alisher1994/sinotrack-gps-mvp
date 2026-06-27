@@ -44,6 +44,38 @@
             <dd id="time">-</dd>
           </div>
         </dl>
+
+        <section class="route-panel" aria-label="Route history">
+          <div class="field">
+            <label for="trackDate">Дата маршрута</label>
+            <input id="trackDate" type="date" />
+          </div>
+
+          <div class="field">
+            <label for="speedLimit">Лимит скорости, км/ч</label>
+            <input id="speedLimit" type="number" min="1" max="180" step="1" value="60" />
+          </div>
+
+          <div class="actions">
+            <button id="loadTrack" type="button">Показать</button>
+            <button id="playTrack" type="button">▶</button>
+          </div>
+
+          <dl class="route-stats">
+            <div>
+              <dt>Точек</dt>
+              <dd id="trackCount">-</dd>
+            </div>
+            <div>
+              <dt>Выше лимита</dt>
+              <dd id="overspeedCount">-</dd>
+            </div>
+            <div>
+              <dt>Макс. скорость</dt>
+              <dd id="maxSpeed">-</dd>
+            </div>
+          </dl>
+        </section>
       </aside>
     </main>
 
