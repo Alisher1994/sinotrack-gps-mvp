@@ -11,6 +11,7 @@ let routeLayer = L.layerGroup().addTo(map);
 let playbackMarker = null;
 let playbackTimer = null;
 let currentPlaybackIndex = 0;
+let playbackProgress = 0;
 let trackPoints = [];
 const roadRouteCache = new Map();
 const segmentSelections = new Map();
@@ -432,12 +433,11 @@ function togglePlayback() {
   elements.playTrack.textContent = '■';
 
   playbackTimer = window.setInterval(() => {
-    setPlaybackPosition(currentPlaybackIndex, { pan: false });
-    currentPlaybackIndex += 1;
-    if (currentPlaybackIndex >= trackPoints.length) {
+    stepPlayback();
+    if (currentPlaybackIndex >= trackPoints.length - 1 && playbackProgress >= 1) {
       stopPlayback();
     }
-  }, 650);
+  }, 80);
 }
 
 function stopPlayback() {
@@ -456,6 +456,7 @@ function setPlaybackPosition(index, { pan = false } = {}) {
   const safeIndex = Math.max(0, Math.min(index, trackPoints.length - 1));
   const point = trackPoints[safeIndex];
   currentPlaybackIndex = safeIndex;
+  playbackProgress = 0;
   elements.trackTimeline.value = String(safeIndex);
   elements.timelineTime.textContent = formatTime(point.time);
   elements.timelineSpeed.textContent = formatSpeed(point.speed);
@@ -477,6 +478,115 @@ function setPlaybackPosition(index, { pan = false } = {}) {
   if (pan) {
     map.panTo([point.lat, point.lon], { animate: true });
   }
+}
+
+function stepPlayback() {
+  const start = trackPoints[currentPlaybackIndex];
+  const finish = trackPoints[currentPlaybackIndex + 1];
+
+  if (!start || !finish) {
+    playbackProgress = 1;
+    return;
+  }
+
+  const elapsedSeconds = Math.max(elapsedSecondsBetween(start, finish) || 1, 1);
+  const progressStep = 0.08 / Math.min(Math.max(elapsedSeconds / 8, 1.2), 6);
+  playbackProgress = Math.min(playbackProgress + progressStep, 1);
+
+  const routePoint = interpolateSegmentRoute(start, finish, playbackProgress);
+  const lat = routePoint.lat;
+  const lon = routePoint.lon;
+  const course = Number.isFinite(finish.course) ? finish.course : start.course;
+  const speed = interpolateNumber(start.speed, finish.speed, playbackProgress);
+  const time = interpolateTime(start.time, finish.time, playbackProgress);
+
+  if (!playbackMarker) {
+    playbackMarker = L.marker([lat, lon], {
+      icon: createCarIcon(course),
+      zIndexOffset: 1000,
+    }).addTo(routeLayer);
+  } else {
+    playbackMarker.setLatLng([lat, lon]);
+    playbackMarker.setIcon(createCarIcon(course));
+  }
+
+  playbackMarker.bindTooltip(`${formatTime(time)} · ${formatSpeed(speed)}`, {
+    permanent: false,
+  });
+  elements.timelineTime.textContent = formatTime(time);
+  elements.timelineSpeed.textContent = formatSpeed(speed);
+  elements.trackTimeline.value = String(currentPlaybackIndex);
+
+  if (playbackProgress >= 1) {
+    currentPlaybackIndex += 1;
+    playbackProgress = 0;
+  }
+}
+
+function interpolateSegmentRoute(start, finish, progress) {
+  const segment = getSelectedSegment(start, finish);
+  if (!segment || segment.coordinates.length < 2) {
+    return {
+      lat: start.lat + (finish.lat - start.lat) * progress,
+      lon: start.lon + (finish.lon - start.lon) * progress,
+    };
+  }
+
+  const totalDistance = segment.distance || routeDistance(segment.coordinates);
+  const targetDistance = totalDistance * progress;
+  let travelled = 0;
+
+  for (let index = 1; index < segment.coordinates.length; index += 1) {
+    const previous = latLngToPoint(segment.coordinates[index - 1]);
+    const current = latLngToPoint(segment.coordinates[index]);
+    const distance = distanceMeters(previous, current);
+
+    if (travelled + distance >= targetDistance) {
+      const localProgress = distance === 0 ? 0 : (targetDistance - travelled) / distance;
+      return {
+        lat: previous.lat + (current.lat - previous.lat) * localProgress,
+        lon: previous.lon + (current.lon - previous.lon) * localProgress,
+      };
+    }
+
+    travelled += distance;
+  }
+
+  const last = latLngToPoint(segment.coordinates[segment.coordinates.length - 1]);
+  return { lat: last.lat, lon: last.lon };
+}
+
+function getSelectedSegment(start, finish) {
+  const segmentKey = getSegmentKey(start, finish);
+  const data = segmentData.get(segmentKey);
+  if (!data) return null;
+  return data.alternatives[data.selectedIndex] ?? data.alternatives[0] ?? null;
+}
+
+function routeDistance(coordinates) {
+  let total = 0;
+  for (let index = 1; index < coordinates.length; index += 1) {
+    total += distanceMeters(latLngToPoint(coordinates[index - 1]), latLngToPoint(coordinates[index]));
+  }
+  return total;
+}
+
+function latLngToPoint(latLng) {
+  return { lat: latLng[0], lon: latLng[1] };
+}
+
+function interpolateNumber(start, finish, progress) {
+  if (!Number.isFinite(start) && !Number.isFinite(finish)) return null;
+  if (!Number.isFinite(start)) return finish;
+  if (!Number.isFinite(finish)) return start;
+  return start + (finish - start) * progress;
+}
+
+function interpolateTime(start, finish, progress) {
+  const startMs = new Date(start).getTime();
+  const finishMs = new Date(finish).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(finishMs)) return start;
+  return new Date(startMs + (finishMs - startMs) * progress).toISOString();
 }
 
 elements.trackDate.value = todayForInput();
