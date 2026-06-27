@@ -165,6 +165,17 @@ button:disabled {
   margin: 0;
 }
 
+.car-marker {
+  filter: drop-shadow(0 4px 8px rgb(23 33 43 / 28%));
+}
+
+.car-marker svg {
+  display: block;
+  width: 38px;
+  height: 38px;
+  transform-origin: center;
+}
+
 .segment-panel {
   display: grid;
   gap: 10px;

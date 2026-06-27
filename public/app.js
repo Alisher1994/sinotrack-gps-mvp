@@ -1,7 +1,7 @@
 const fallbackCenter = [41.3111, 69.2797];
 const map = L.map('map', { zoomControl: true }).setView(fallbackCenter, 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
   maxZoom: 19,
   attribution: '&copy; OpenStreetMap contributors',
 }).addTo(map);
@@ -10,6 +10,7 @@ let marker = null;
 let routeLayer = L.layerGroup().addTo(map);
 let playbackMarker = null;
 let playbackTimer = null;
+let currentPlaybackIndex = 0;
 let trackPoints = [];
 const roadRouteCache = new Map();
 const segmentSelections = new Map();
@@ -64,6 +65,20 @@ function formatDistance(meters) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(2)} км` : `${Math.round(meters)} м`;
 }
 
+function createCarIcon(course = 0) {
+  return L.divIcon({
+    className: 'car-marker',
+    html: `
+      <svg viewBox="0 0 64 64" style="transform: rotate(${Number(course) || 0}deg)">
+        <path d="M32 4 48 58 32 50 16 58 32 4Z" fill="#1565ff" stroke="#ffffff" stroke-width="5" stroke-linejoin="round"/>
+        <path d="M32 13 41 48 32 43 23 48 32 13Z" fill="#18a058"/>
+      </svg>
+    `,
+    iconSize: [38, 38],
+    iconAnchor: [19, 19],
+  });
+}
+
 async function loadLocation() {
   try {
     const response = await fetch('/api/location', { cache: 'no-store' });
@@ -92,7 +107,6 @@ async function loadLocation() {
     }
 
     marker.setLatLng(point);
-    map.panTo(point, { animate: true });
   } catch (error) {
     console.error('Failed to load location', error);
     updateStatus(false);
@@ -404,29 +418,28 @@ function togglePlayback() {
     return;
   }
 
-  let index = 0;
+  currentPlaybackIndex = 0;
   elements.playTrack.textContent = '■';
 
   playbackTimer = window.setInterval(() => {
-    const point = trackPoints[index];
+    const point = trackPoints[currentPlaybackIndex];
 
     if (!playbackMarker) {
-      playbackMarker = L.circleMarker([point.lat, point.lon], {
-        radius: 8,
-        color: '#f2b705',
-        fillColor: '#f2b705',
-        fillOpacity: 1,
+      playbackMarker = L.marker([point.lat, point.lon], {
+        icon: createCarIcon(point.course),
+        zIndexOffset: 1000,
       }).addTo(routeLayer);
     } else {
       playbackMarker.setLatLng([point.lat, point.lon]);
+      playbackMarker.setIcon(createCarIcon(point.course));
     }
 
     playbackMarker.bindTooltip(`${formatTime(point.time)} · ${formatSpeed(point.speed)}`, {
       permanent: false,
     });
 
-    index += 1;
-    if (index >= trackPoints.length) {
+    currentPlaybackIndex += 1;
+    if (currentPlaybackIndex >= trackPoints.length) {
       stopPlayback();
     }
   }, 650);
