@@ -80,6 +80,7 @@ async function loadLocation() {
     }
 
     marker.setLatLng(point);
+    map.panTo(point, { animate: true });
   } catch (error) {
     console.error('Failed to load location', error);
     updateStatus(false);
