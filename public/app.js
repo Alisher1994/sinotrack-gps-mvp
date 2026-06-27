@@ -28,6 +28,9 @@ const elements = {
   speedLimit: document.querySelector('#speedLimit'),
   loadTrack: document.querySelector('#loadTrack'),
   playTrack: document.querySelector('#playTrack'),
+  trackTimeline: document.querySelector('#trackTimeline'),
+  timelineTime: document.querySelector('#timelineTime'),
+  timelineSpeed: document.querySelector('#timelineSpeed'),
   trackCount: document.querySelector('#trackCount'),
   overspeedCount: document.querySelector('#overspeedCount'),
   maxSpeed: document.querySelector('#maxSpeed'),
@@ -133,13 +136,20 @@ async function loadTrack() {
     elements.overspeedCount.textContent = String(track.overspeedCount);
     elements.maxSpeed.textContent = formatSpeed(track.maxSpeed);
     elements.playTrack.disabled = trackPoints.length < 2;
+    elements.trackTimeline.disabled = trackPoints.length === 0;
+    elements.trackTimeline.max = String(Math.max(trackPoints.length - 1, 0));
+    elements.trackTimeline.value = '0';
 
     await drawTrack(Number.parseFloat(elements.speedLimit.value || '60'));
+    setPlaybackPosition(0, { pan: false });
   } catch (error) {
     console.error('Failed to load track', error);
     elements.trackCount.textContent = '-';
     elements.overspeedCount.textContent = '-';
     elements.maxSpeed.textContent = '-';
+    elements.timelineTime.textContent = '-';
+    elements.timelineSpeed.textContent = '-';
+    elements.trackTimeline.disabled = true;
   } finally {
     elements.loadTrack.disabled = false;
   }
@@ -418,26 +428,11 @@ function togglePlayback() {
     return;
   }
 
-  currentPlaybackIndex = 0;
+  currentPlaybackIndex = Number.parseInt(elements.trackTimeline.value, 10) || 0;
   elements.playTrack.textContent = '■';
 
   playbackTimer = window.setInterval(() => {
-    const point = trackPoints[currentPlaybackIndex];
-
-    if (!playbackMarker) {
-      playbackMarker = L.marker([point.lat, point.lon], {
-        icon: createCarIcon(point.course),
-        zIndexOffset: 1000,
-      }).addTo(routeLayer);
-    } else {
-      playbackMarker.setLatLng([point.lat, point.lon]);
-      playbackMarker.setIcon(createCarIcon(point.course));
-    }
-
-    playbackMarker.bindTooltip(`${formatTime(point.time)} · ${formatSpeed(point.speed)}`, {
-      permanent: false,
-    });
-
+    setPlaybackPosition(currentPlaybackIndex, { pan: false });
     currentPlaybackIndex += 1;
     if (currentPlaybackIndex >= trackPoints.length) {
       stopPlayback();
@@ -453,10 +448,45 @@ function stopPlayback() {
   elements.playTrack.textContent = '▶';
 }
 
+function setPlaybackPosition(index, { pan = false } = {}) {
+  if (trackPoints.length === 0) {
+    return;
+  }
+
+  const safeIndex = Math.max(0, Math.min(index, trackPoints.length - 1));
+  const point = trackPoints[safeIndex];
+  currentPlaybackIndex = safeIndex;
+  elements.trackTimeline.value = String(safeIndex);
+  elements.timelineTime.textContent = formatTime(point.time);
+  elements.timelineSpeed.textContent = formatSpeed(point.speed);
+
+  if (!playbackMarker) {
+    playbackMarker = L.marker([point.lat, point.lon], {
+      icon: createCarIcon(point.course),
+      zIndexOffset: 1000,
+    }).addTo(routeLayer);
+  } else {
+    playbackMarker.setLatLng([point.lat, point.lon]);
+    playbackMarker.setIcon(createCarIcon(point.course));
+  }
+
+  playbackMarker.bindTooltip(`${formatTime(point.time)} · ${formatSpeed(point.speed)}`, {
+    permanent: false,
+  });
+
+  if (pan) {
+    map.panTo([point.lat, point.lon], { animate: true });
+  }
+}
+
 elements.trackDate.value = todayForInput();
 elements.loadTrack.addEventListener('click', loadTrack);
 elements.playTrack.addEventListener('click', togglePlayback);
 elements.speedLimit.addEventListener('change', loadTrack);
+elements.trackTimeline.addEventListener('input', () => {
+  stopPlayback();
+  setPlaybackPosition(Number.parseInt(elements.trackTimeline.value, 10), { pan: true });
+});
 
 loadLocation();
 loadTrack();
