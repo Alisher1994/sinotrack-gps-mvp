@@ -11,6 +11,7 @@ let routeLayer = L.layerGroup().addTo(map);
 let playbackMarker = null;
 let playbackTimer = null;
 let trackPoints = [];
+const roadRouteCache = new Map();
 
 const elements = {
   status: document.querySelector('#status'),
@@ -108,7 +109,7 @@ async function loadTrack() {
     elements.maxSpeed.textContent = formatSpeed(track.maxSpeed);
     elements.playTrack.disabled = trackPoints.length < 2;
 
-    drawTrack(Number.parseFloat(elements.speedLimit.value || '60'));
+    await drawTrack(Number.parseFloat(elements.speedLimit.value || '60'));
   } catch (error) {
     console.error('Failed to load track', error);
     elements.trackCount.textContent = '-';
@@ -119,7 +120,7 @@ async function loadTrack() {
   }
 }
 
-function drawTrack(speedLimit) {
+async function drawTrack(speedLimit) {
   routeLayer.clearLayers();
 
   if (trackPoints.length === 0) {
@@ -132,12 +133,10 @@ function drawTrack(speedLimit) {
     const isOverspeed =
       (Number.isFinite(previous.speed) && previous.speed > speedLimit)
       || (Number.isFinite(current.speed) && current.speed > speedLimit);
+    const segment = await getRoadSegment(previous, current);
 
     L.polyline(
-      [
-        [previous.lat, previous.lon],
-        [current.lat, current.lon],
-      ],
+      segment,
       {
         color: isOverspeed ? '#d64545' : '#0b5fff',
         weight: isOverspeed ? 6 : 4,
@@ -181,6 +180,78 @@ function drawTrack(speedLimit) {
     padding: [36, 36],
     maxZoom: 16,
   });
+}
+
+async function getRoadSegment(previous, current) {
+  const directSegment = [
+    [previous.lat, previous.lon],
+    [current.lat, current.lon],
+  ];
+  const distance = distanceMeters(previous, current);
+
+  if (distance < 20 || distance > 3000) {
+    return directSegment;
+  }
+
+  const cacheKey = [
+    previous.lat.toFixed(6),
+    previous.lon.toFixed(6),
+    current.lat.toFixed(6),
+    current.lon.toFixed(6),
+  ].join(',');
+
+  if (roadRouteCache.has(cacheKey)) {
+    return roadRouteCache.get(cacheKey);
+  }
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 4500);
+
+  try {
+    const url = new URL(
+      `https://router.project-osrm.org/route/v1/driving/${previous.lon},${previous.lat};${current.lon},${current.lat}`,
+    );
+    url.searchParams.set('overview', 'full');
+    url.searchParams.set('geometries', 'geojson');
+    url.searchParams.set('alternatives', 'false');
+    url.searchParams.set('steps', 'false');
+
+    const response = await fetch(url, { signal: controller.signal });
+    if (!response.ok) throw new Error(`OSRM ${response.status}`);
+
+    const data = await response.json();
+    const coordinates = data.routes?.[0]?.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) {
+      throw new Error('OSRM route is empty');
+    }
+
+    const roadSegment = coordinates.map(([lon, lat]) => [lat, lon]);
+    roadRouteCache.set(cacheKey, roadSegment);
+    return roadSegment;
+  } catch (error) {
+    console.warn('Road segment fallback', error);
+    roadRouteCache.set(cacheKey, directSegment);
+    return directSegment;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function distanceMeters(a, b) {
+  const earthRadius = 6371000;
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const deltaLat = toRadians(b.lat - a.lat);
+  const deltaLon = toRadians(b.lon - a.lon);
+  const value =
+    Math.sin(deltaLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+
+  return earthRadius * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}
+
+function toRadians(value) {
+  return value * Math.PI / 180;
 }
 
 function togglePlayback() {
