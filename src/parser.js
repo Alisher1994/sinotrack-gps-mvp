@@ -64,7 +64,8 @@ function parseSinotrackHqPacket(rawAscii) {
   const lat = parseNmeaCoordinate(latValue, latHemisphere, 2);
   const lon = parseNmeaCoordinate(lonValue, lonHemisphere, 3);
   const time = parseDeviceDateTime(dateValue, timeValue);
-  const speed = Number.parseFloat(speedValue);
+  const speedKnots = Number.parseFloat(speedValue);
+  const speed = Number.isFinite(speedKnots) ? speedKnots * 1.852 : null;
 
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return { deviceId, location: null };

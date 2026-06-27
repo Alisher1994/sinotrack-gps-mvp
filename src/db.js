@@ -69,6 +69,16 @@ export async function initDb() {
     create index if not exists track_points_device_received_idx
     on track_points (device_id, received_at);
   `);
+
+  await pool.query(`
+    create table if not exists app_metadata (
+      key text primary key,
+      value text not null,
+      updated_at timestamptz not null default now()
+    );
+  `);
+
+  await migrateSpeedsToKmh();
 }
 
 export async function saveRawPacket(packet) {
@@ -298,13 +308,36 @@ function getUtcRangeForLocalDate(date, timezoneOffsetMinutes) {
 }
 
 function formatTrackPoint(point) {
+  const speed = point.speed === null || point.speed === undefined ? null : Number(point.speed);
+
   return {
     deviceId: point.deviceId,
     lat: Number(point.lat),
     lon: Number(point.lon),
-    speed: point.speed === null || point.speed === undefined ? null : Number(point.speed),
+    speed,
     course: point.course === null || point.course === undefined ? null : Number(point.course),
     time: point.time instanceof Date ? point.time.toISOString() : point.time,
     receivedAt: point.receivedAt instanceof Date ? point.receivedAt.toISOString() : point.receivedAt,
   };
+}
+
+async function migrateSpeedsToKmh() {
+  const migrationKey = 'speeds_migrated_to_kmh';
+  const existing = await pool.query('select value from app_metadata where key = $1', [migrationKey]);
+  if (existing.rows[0]?.value === 'true') {
+    return;
+  }
+
+  await pool.query('update track_points set speed = speed * 1.852 where speed is not null');
+  await pool.query('update last_locations set speed = speed * 1.852 where speed is not null');
+  await pool.query(
+    `
+      insert into app_metadata (key, value, updated_at)
+      values ($1, 'true', now())
+      on conflict (key) do update set value = excluded.value, updated_at = now()
+    `,
+    [migrationKey],
+  );
+
+  console.log('[db] migrated stored speeds from knots to km/h');
 }

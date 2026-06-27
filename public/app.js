@@ -129,7 +129,9 @@ function drawTrack(speedLimit) {
   for (let index = 1; index < trackPoints.length; index += 1) {
     const previous = trackPoints[index - 1];
     const current = trackPoints[index];
-    const isOverspeed = Number.isFinite(current.speed) && current.speed > speedLimit;
+    const isOverspeed =
+      (Number.isFinite(previous.speed) && previous.speed > speedLimit)
+      || (Number.isFinite(current.speed) && current.speed > speedLimit);
 
     L.polyline(
       [
@@ -143,6 +145,22 @@ function drawTrack(speedLimit) {
       },
     ).addTo(routeLayer);
   }
+
+  trackPoints.forEach((point, index) => {
+    const isOverspeed = Number.isFinite(point.speed) && point.speed > speedLimit;
+    const updateMarker = L.circleMarker([point.lat, point.lon], {
+      radius: isOverspeed ? 5 : 4,
+      color: isOverspeed ? '#b42318' : '#ffffff',
+      weight: 2,
+      fillColor: isOverspeed ? '#d64545' : '#0b5fff',
+      fillOpacity: 0.95,
+    }).addTo(routeLayer);
+
+    updateMarker.bindTooltip(
+      `#${index + 1} · ${formatTime(point.time)} · ${formatSpeed(point.speed)}`,
+      { sticky: true },
+    );
+  });
 
   const start = trackPoints[0];
   const finish = trackPoints[trackPoints.length - 1];
