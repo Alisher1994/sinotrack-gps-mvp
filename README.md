@@ -28,6 +28,12 @@ npm run dev
 
 ## Railway
 
+Проект развернут:
+
+- GitHub: `https://github.com/Alisher1994/sinotrack-gps-mvp`
+- Railway HTTP: `https://sinotrack-gps-api-production.up.railway.app`
+- Railway project: `https://railway.com/project/5a1b94eb-af0d-468e-b905-e03b563572c3`
+
 Переменные окружения:
 
 ```text
@@ -78,3 +84,31 @@ RCONF
 ```
 
 После первого реального пакета из трекера нужно добавить точный парсер ST-901M и корректный ACK.
+
+## TCP Proxy для трекера
+
+HTTP-домен Railway подходит для карты и API, но ST-901M подключается по raw TCP.
+
+В Railway нужно открыть:
+
+```text
+sinotrack-gps-api -> Settings -> Networking -> TCP Proxy
+```
+
+Internal port:
+
+```text
+5001
+```
+
+Railway выдаст адрес вида:
+
+```text
+xxxx.proxy.rlwy.net:12345
+```
+
+Именно его нужно отправить трекеру через SMS:
+
+```text
+8040000 xxxx.proxy.rlwy.net 12345
+```
