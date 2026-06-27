@@ -12,6 +12,9 @@ let playbackMarker = null;
 let playbackTimer = null;
 let trackPoints = [];
 const roadRouteCache = new Map();
+const segmentSelections = new Map();
+const segmentPolylines = new Map();
+const segmentData = new Map();
 
 const elements = {
   status: document.querySelector('#status'),
@@ -27,6 +30,9 @@ const elements = {
   trackCount: document.querySelector('#trackCount'),
   overspeedCount: document.querySelector('#overspeedCount'),
   maxSpeed: document.querySelector('#maxSpeed'),
+  segmentPanel: document.querySelector('#segmentPanel'),
+  segmentSummary: document.querySelector('#segmentSummary'),
+  segmentOptions: document.querySelector('#segmentOptions'),
 };
 
 function formatTime(value) {
@@ -51,6 +57,11 @@ function todayForInput() {
 
 function formatSpeed(value) {
   return Number.isFinite(value) ? `${Math.round(value)} км/ч` : '-';
+}
+
+function formatDistance(meters) {
+  if (!Number.isFinite(meters)) return '-';
+  return meters >= 1000 ? `${(meters / 1000).toFixed(2)} км` : `${Math.round(meters)} м`;
 }
 
 async function loadLocation() {
@@ -122,6 +133,9 @@ async function loadTrack() {
 
 async function drawTrack(speedLimit) {
   routeLayer.clearLayers();
+  segmentPolylines.clear();
+  segmentData.clear();
+  elements.segmentPanel.hidden = true;
 
   if (trackPoints.length === 0) {
     return;
@@ -133,16 +147,32 @@ async function drawTrack(speedLimit) {
     const isOverspeed =
       (Number.isFinite(previous.speed) && previous.speed > speedLimit)
       || (Number.isFinite(current.speed) && current.speed > speedLimit);
-    const segment = await getRoadSegment(previous, current);
+    const segmentKey = getSegmentKey(previous, current);
+    const alternatives = await getRoadAlternatives(previous, current);
+    const selectedIndex = segmentSelections.get(segmentKey) ?? chooseBestAlternative(previous, current, alternatives);
+    const selected = alternatives[selectedIndex] ?? alternatives[0];
+    const isUncertain = alternatives.length > 1 && isSegmentUncertain(previous, current, selected);
 
-    L.polyline(
-      segment,
+    const polyline = L.polyline(
+      selected.coordinates,
       {
-        color: isOverspeed ? '#d64545' : '#0b5fff',
-        weight: isOverspeed ? 6 : 4,
+        color: isUncertain ? '#f2b705' : isOverspeed ? '#d64545' : '#0b5fff',
+        weight: isUncertain || isOverspeed ? 6 : 4,
         opacity: 0.9,
       },
     ).addTo(routeLayer);
+
+    polyline.on('click', () => showSegmentOptions(segmentKey));
+    segmentPolylines.set(segmentKey, polyline);
+    segmentData.set(segmentKey, {
+      index,
+      previous,
+      current,
+      alternatives,
+      selectedIndex,
+      isOverspeed,
+      isUncertain,
+    });
   }
 
   trackPoints.forEach((point, index) => {
@@ -182,23 +212,24 @@ async function drawTrack(speedLimit) {
   });
 }
 
-async function getRoadSegment(previous, current) {
+async function getRoadAlternatives(previous, current) {
   const directSegment = [
     [previous.lat, previous.lon],
     [current.lat, current.lon],
   ];
+  const directAlternative = {
+    coordinates: directSegment,
+    distance: distanceMeters(previous, current),
+    duration: null,
+    source: 'direct',
+  };
   const distance = distanceMeters(previous, current);
 
   if (distance < 20 || distance > 3000) {
-    return directSegment;
+    return [directAlternative];
   }
 
-  const cacheKey = [
-    previous.lat.toFixed(6),
-    previous.lon.toFixed(6),
-    current.lat.toFixed(6),
-    current.lon.toFixed(6),
-  ].join(',');
+  const cacheKey = getSegmentKey(previous, current);
 
   if (roadRouteCache.has(cacheKey)) {
     return roadRouteCache.get(cacheKey);
@@ -213,25 +244,32 @@ async function getRoadSegment(previous, current) {
     );
     url.searchParams.set('overview', 'full');
     url.searchParams.set('geometries', 'geojson');
-    url.searchParams.set('alternatives', 'false');
+    url.searchParams.set('alternatives', 'true');
     url.searchParams.set('steps', 'false');
 
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`OSRM ${response.status}`);
 
     const data = await response.json();
-    const coordinates = data.routes?.[0]?.geometry?.coordinates;
-    if (!Array.isArray(coordinates) || coordinates.length < 2) {
+    const alternatives = data.routes
+      ?.map((route) => ({
+        coordinates: route.geometry?.coordinates?.map(([lon, lat]) => [lat, lon]) ?? [],
+        distance: route.distance,
+        duration: route.duration,
+        source: 'osrm',
+      }))
+      .filter((route) => route.coordinates.length >= 2);
+
+    if (!Array.isArray(alternatives) || alternatives.length === 0) {
       throw new Error('OSRM route is empty');
     }
 
-    const roadSegment = coordinates.map(([lon, lat]) => [lat, lon]);
-    roadRouteCache.set(cacheKey, roadSegment);
-    return roadSegment;
+    roadRouteCache.set(cacheKey, alternatives);
+    return alternatives;
   } catch (error) {
     console.warn('Road segment fallback', error);
-    roadRouteCache.set(cacheKey, directSegment);
-    return directSegment;
+    roadRouteCache.set(cacheKey, [directAlternative]);
+    return [directAlternative];
   } finally {
     window.clearTimeout(timeout);
   }
@@ -252,6 +290,108 @@ function distanceMeters(a, b) {
 
 function toRadians(value) {
   return value * Math.PI / 180;
+}
+
+function chooseBestAlternative(previous, current, alternatives) {
+  const measuredSpeed = averageMeasuredSpeed(previous, current);
+  const elapsedSeconds = elapsedSecondsBetween(previous, current);
+
+  if (!Number.isFinite(measuredSpeed) || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
+    return 0;
+  }
+
+  let bestIndex = 0;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  alternatives.forEach((alternative, index) => {
+    const requiredSpeed = alternative.distance / elapsedSeconds * 3.6;
+    const score = Math.abs(requiredSpeed - measuredSpeed);
+
+    if (score < bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  return bestIndex;
+}
+
+function isSegmentUncertain(previous, current, alternative) {
+  const elapsedSeconds = elapsedSecondsBetween(previous, current);
+  const measuredSpeed = averageMeasuredSpeed(previous, current);
+
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0 || !Number.isFinite(measuredSpeed)) {
+    return false;
+  }
+
+  const requiredSpeed = alternative.distance / elapsedSeconds * 3.6;
+  return Math.abs(requiredSpeed - measuredSpeed) > 25 || alternative.distance > distanceMeters(previous, current) * 1.8;
+}
+
+function showSegmentOptions(segmentKey) {
+  const data = segmentData.get(segmentKey);
+  if (!data) return;
+
+  const elapsedSeconds = elapsedSecondsBetween(data.previous, data.current);
+  const measuredSpeed = averageMeasuredSpeed(data.previous, data.current);
+  elements.segmentPanel.hidden = false;
+  elements.segmentSummary.textContent =
+    `#${data.index} · ${Math.round(elapsedSeconds || 0)} сек · GPS ${formatSpeed(measuredSpeed)}`;
+  elements.segmentOptions.innerHTML = '';
+
+  data.alternatives.forEach((alternative, index) => {
+    const requiredSpeed = Number.isFinite(elapsedSeconds) && elapsedSeconds > 0
+      ? alternative.distance / elapsedSeconds * 3.6
+      : null;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `segment-option${index === data.selectedIndex ? ' active' : ''}`;
+    button.textContent =
+      `Вариант ${index + 1}: ${formatDistance(alternative.distance)} · нужно ${formatSpeed(requiredSpeed)}`;
+    button.addEventListener('click', () => selectSegmentAlternative(segmentKey, index));
+    elements.segmentOptions.append(button);
+  });
+}
+
+function selectSegmentAlternative(segmentKey, selectedIndex) {
+  const data = segmentData.get(segmentKey);
+  const polyline = segmentPolylines.get(segmentKey);
+  const selected = data?.alternatives[selectedIndex];
+  if (!data || !polyline || !selected) return;
+
+  segmentSelections.set(segmentKey, selectedIndex);
+  data.selectedIndex = selectedIndex;
+  data.isUncertain = isSegmentUncertain(data.previous, data.current, selected);
+  polyline.setLatLngs(selected.coordinates);
+  polyline.setStyle({
+    color: data.isUncertain ? '#f2b705' : data.isOverspeed ? '#d64545' : '#0b5fff',
+    weight: data.isUncertain || data.isOverspeed ? 6 : 4,
+  });
+  showSegmentOptions(segmentKey);
+}
+
+function getSegmentKey(previous, current) {
+  return [
+    previous.receivedAt ?? previous.time,
+    current.receivedAt ?? current.time,
+    previous.lat.toFixed(6),
+    previous.lon.toFixed(6),
+    current.lat.toFixed(6),
+    current.lon.toFixed(6),
+  ].join(',');
+}
+
+function averageMeasuredSpeed(previous, current) {
+  const speeds = [previous.speed, current.speed].filter((speed) => Number.isFinite(speed));
+  if (speeds.length === 0) return null;
+  return speeds.reduce((sum, speed) => sum + speed, 0) / speeds.length;
+}
+
+function elapsedSecondsBetween(previous, current) {
+  const start = new Date(previous.time ?? previous.receivedAt).getTime();
+  const end = new Date(current.time ?? current.receivedAt).getTime();
+  const seconds = Math.abs(end - start) / 1000;
+  return Number.isFinite(seconds) ? seconds : null;
 }
 
 function togglePlayback() {

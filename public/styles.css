@@ -165,6 +165,53 @@ button:disabled {
   margin: 0;
 }
 
+.segment-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #f7f9fb;
+  border: 1px solid #d7dee6;
+  border-radius: 8px;
+}
+
+.segment-panel[hidden] {
+  display: none;
+}
+
+.segment-panel h2 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.segment-panel p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.segment-options {
+  display: grid;
+  gap: 8px;
+}
+
+.segment-option {
+  height: auto;
+  min-height: 42px;
+  padding: 8px 10px;
+  color: #17212b;
+  background: #ffffff;
+  border: 1px solid #cad4df;
+  text-align: left;
+  font-weight: 650;
+}
+
+.segment-option.active {
+  color: #ffffff;
+  background: #0b5fff;
+  border-color: #0b5fff;
+}
+
 .dot {
   width: 10px;
   height: 10px;
