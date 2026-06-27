@@ -44,6 +44,15 @@ body {
   z-index: 500;
 }
 
+.vehicle-photo {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 8px;
+  background: #e5ebf0;
+}
+
 .brand {
   display: flex;
   align-items: center;
