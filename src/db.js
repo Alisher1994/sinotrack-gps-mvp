@@ -87,6 +87,7 @@ export async function saveLocation(location) {
     lon: location.lon ?? null,
     speed: location.speed ?? null,
     time: location.time ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     rawPacketId: location.rawPacketId ?? null,
   };
 

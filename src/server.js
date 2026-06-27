@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closeDb, getLastLocation, initDb } from './db.js';
+import { startCombinedServer } from './combinedServer.js';
 import { startTcpServer } from './tcpServer.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,6 +11,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+const serviceMode = process.env.SERVICE_MODE ?? 'all';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -35,7 +37,11 @@ app.get('/api/location', async (_request, response, next) => {
     }
 
     const time = location.time instanceof Date ? location.time.toISOString() : location.time;
-    const ageMs = Date.now() - new Date(time).getTime();
+    const updatedAt = location.updatedAt instanceof Date
+      ? location.updatedAt.toISOString()
+      : location.updatedAt;
+    const onlineTime = updatedAt ?? time;
+    const ageMs = Date.now() - new Date(onlineTime).getTime();
 
     response.json({
       deviceId: location.deviceId,
@@ -57,16 +63,29 @@ app.use((error, _request, response, _next) => {
 
 await initDb();
 
-const httpServer = app.listen(port, () => {
-  console.log(`[http] listening on 0.0.0.0:${port}`);
-});
+let httpServer = null;
+let tcpServer = null;
+let combinedServer = null;
+const trackerPort = Number.parseInt(process.env.TRACKER_PORT ?? process.env.PORT ?? '5001', 10);
+const useCombinedServer = serviceMode === 'all' && port === trackerPort;
 
-const tcpServer = startTcpServer();
+if (useCombinedServer) {
+  combinedServer = startCombinedServer(app, port);
+} else if (serviceMode === 'all' || serviceMode === 'http') {
+  httpServer = app.listen(port, () => {
+    console.log(`[http] listening on 0.0.0.0:${port}`);
+  });
+}
+
+if (!useCombinedServer && (serviceMode === 'all' || serviceMode === 'tcp')) {
+  tcpServer = startTcpServer();
+}
 
 async function shutdown(signal) {
   console.log(`[app] received ${signal}, shutting down`);
-  httpServer.close();
-  tcpServer.close();
+  combinedServer?.close();
+  httpServer?.close();
+  tcpServer?.close();
   await closeDb();
   process.exit(0);
 }
