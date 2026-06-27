@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>My Logistic GPS</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="map-shell">
+        <div id="map" aria-label="GPS map"></div>
+      </section>
+
+      <aside class="status-panel" aria-label="Tracker status">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <div>
+            <h1>My Logistic</h1>
+            <p>Sinotrack ST-901M</p>
+          </div>
+        </div>
+
+        <dl class="metrics">
+          <div>
+            <dt>Статус</dt>
+            <dd><span id="statusDot" class="dot offline"></span><span id="status">Offline</span></dd>
+          </div>
+          <div>
+            <dt>Устройство</dt>
+            <dd id="deviceId">-</dd>
+          </div>
+          <div>
+            <dt>Координаты</dt>
+            <dd id="coordinates">-</dd>
+          </div>
+          <div>
+            <dt>Скорость</dt>
+            <dd id="speed">-</dd>
+          </div>
+          <div>
+            <dt>Последнее обновление</dt>
+            <dd id="time">-</dd>
+          </div>
+        </dl>
+      </aside>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
