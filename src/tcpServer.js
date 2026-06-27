@@ -15,7 +15,10 @@ function getAckBuffer() {
 }
 
 export function startTcpServer() {
-  const port = Number.parseInt(process.env.TRACKER_PORT ?? process.env.PORT ?? '5001', 10);
+  const port = Number.parseInt(
+    process.env.TRACKER_PORT ?? process.env.RAILWAY_TCP_APPLICATION_PORT ?? process.env.PORT ?? '5001',
+    10,
+  );
 
   const server = net.createServer((socket) => {
     const remoteAddress = socket.remoteAddress;

@@ -10,7 +10,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = Number.parseInt(process.env.PORT ?? '3000', 10);
+const httpPort = Number.parseInt(
+  process.env.HTTP_PORT
+    ?? (process.env.RAILWAY_TCP_APPLICATION_PORT ? '8080' : process.env.PORT ?? '3000'),
+  10,
+);
 const serviceMode = process.env.SERVICE_MODE ?? 'all';
 
 app.use(express.json());
@@ -66,14 +70,17 @@ await initDb();
 let httpServer = null;
 let tcpServer = null;
 let combinedServer = null;
-const trackerPort = Number.parseInt(process.env.TRACKER_PORT ?? process.env.PORT ?? '5001', 10);
-const useCombinedServer = serviceMode === 'all' && port === trackerPort;
+const trackerPort = Number.parseInt(
+  process.env.TRACKER_PORT ?? process.env.RAILWAY_TCP_APPLICATION_PORT ?? process.env.PORT ?? '5001',
+  10,
+);
+const useCombinedServer = serviceMode === 'all' && httpPort === trackerPort;
 
 if (useCombinedServer) {
-  combinedServer = startCombinedServer(app, port);
+  combinedServer = startCombinedServer(app, httpPort);
 } else if (serviceMode === 'all' || serviceMode === 'http') {
-  httpServer = app.listen(port, () => {
-    console.log(`[http] listening on 0.0.0.0:${port}`);
+  httpServer = app.listen(httpPort, () => {
+    console.log(`[http] listening on 0.0.0.0:${httpPort}`);
   });
 }
 
